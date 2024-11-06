@@ -1,0 +1,167 @@
+---
+title: "Homework_4_HarrisonBartley"
+format: html
+editor: visual
+---
+
+First, we need to load libraries.
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(tidycensus)
+```
+
+Next, we'll load our data
+
+```{r}
+data = read_csv(here::here("Desktop", "plan372-fa24-hb", "Plan372-hw4", "airport_pairs.csv"),
+  col_types=c(origin_cbsa="character",
+  dest_cbsa="character"))
+```
+###Number 1
+I am filtering the data for just flights involving RDU
+```{r}
+rdu_routes = data |> 
+  filter(origin == "RDU" | dest == "RDU") |>
+  group_by(origin, dest, origin_cbsa, dest_cbsa, distancemiles) |> 
+  summarise(total_passengers = sum(passengers, na.rm = TRUE)) |> 
+  filter(total_passengers>10000)
+```
+
+
+###Number 2
+#Filtering data greater than 10000 passangers
+```{r}
+all_routes = data |> 
+  group_by(origin, dest, origin_cbsa, dest_cbsa, distancemiles) |> 
+  summarise(total_passengers = sum(passengers, na.rm = TRUE)) |> 
+  filter(total_passengers>10000)
+```
+
+```{r}
+cbsa_data <- get_acs(
+  geography = "cbsa", 
+  variables = c("total_population" = "B01003_001"),
+  year = 2022, 
+  survey = "acs5"
+) 
+
+origin_pop = cbsa_data |> 
+  rename(origin_cbsa = GEOID, origin_pop = estimate)
+
+dest_pop = cbsa_data |> 
+  rename(dest_cbsa = GEOID, dest_pop = estimate)
+
+all_routes = all_routes |> 
+  left_join(origin_pop, by = "origin_cbsa") |> 
+  left_join(dest_pop, by = "dest_cbsa")
+
+
+cbsa_volumes = all_routes |>
+  group_by(origin_cbsa, dest_cbsa, origin_pop, dest_pop) |>
+  summarize(total_passengers = sum(total_passengers), avg_distance = mean(distancemiles))
+```
+
+# Scatterplots
+```{r}
+# 1. Origin population vs. Total passengers
+ggplot(cbsa_volumes, aes(x = origin_pop, y = total_passengers)) +
+  geom_point() +
+  labs(title = "Scatterplot: Origin Population vs. Total Passengers",
+       x = "Origin Population",
+       y = "Total Passengers")
+  
+ggplot(cbsa_volumes, aes(x = dest_pop, y = total_passengers)) +
+  geom_point() +
+  labs(title = "Scatterplot: Destination Population vs. Total Passengers",
+       x = "Destination Population",
+       y = "Total Passengers")
+
+ggplot(cbsa_volumes, aes(x = avg_distance, y = total_passengers)) +
+  geom_point() +
+  labs(title = "Scatterplot: Average Flight Distance vs. Total Passengers",
+       x = "Average Flight Distance (miles)",
+       y = "Total Passengers")
+  
+```
+
+
+#Question 3: Passenger volume regression
+#Run a regression of total CBSA-to-CBSA passenger volumes on origin CBSA population, destination CBSA population, distance between cities, and any other Census variables you wish to include. Use all the data, not just data for flights coming to/going from RDU. Present the results of your regression as a table in your writeup, and interpret the coefficients (e.g., how many more airline passengers are associated with a 1000-person increase in population at the origin city, etc.) Interpret all coefficients in the model (except the constant/intercept). Do the coefficients make sense? Are they statistically significant? Does the model fit well, as indicated by R^2? [2 points + 1 extra credit point for including and interpreting variables other than population]
+```{r}
+# Run the regression model
+single_variable_model = lm(total_passengers ~ origin_pop + dest_pop + avg_distance, data = cbsa_volumes)
+
+# to see the results of our model, we can run summary()
+summary(single_variable_model)
+
+```
+
+
+#Question 4: Passenger volume prediction
+#These are the routes Air Carolina is considering implementing:
+
+#RDU to Portland, OR (PDX) - 2,363 mi
+#RDU to El Paso, TX (ELP) - 1,606 mi
+#RDU to Tallahassee, FL (TLH) - 496 mi
+#RDU to Sacramento, CA (SMF) - 2,345 mi
+#Use your model to predict passenger demand on these routes. Be sure to predict demand in both directions, i.e. RDU to the destination, and the destination to RDU. Since your model is based on origin and destination metropolitan area Census data, you’ll have to find that data for these cities, and create a new table to predict from (it should already be in your dataset, since airlines already fly to all of these cities, just not from RDU).
+#Include a table with forecast demand for each route in your writeup, and discuss which route is likely to be the most popular. How confident are you in your projection, based on the R^2 of your model? Are there any unexpected or nonsensical results? [2 points]
+
+```{r}
+new_routes = tribble(
+    ~origin_cbsa, ~dest_cbsa, ~avg_distance,
+    "39580",        "38900",          2363,
+    "39580",        "21340",          1606,
+    "39580",        "45220",          496,
+    "39580",        "40900",          2345,
+  
+)
+
+new_routes = new_routes |> 
+  left_join(origin_pop, by = "origin_cbsa") |> 
+  left_join(dest_pop, by = "dest_cbsa")
+
+
+```
+
+```{r}
+new_routes$forecast_demand = predict(single_variable_model, new_routes)
+
+new_routes
+
+```
+
+#CBSA CODES:
+#RDU:39580
+#PDX:38900
+#ELP:21340
+#TLH:45220
+#SMF:40900
+
+```{r}
+new_routes_rdu = tribble(
+    ~origin_cbsa, ~dest_cbsa, ~avg_distance,
+    "38900",        "39580",          2363,
+    "21340",        "39580",          1606,
+    "45220",        "39580",          496,
+    "40900",        "39580",          2345,
+  
+)
+
+new_routes_rdu = new_routes_rdu |> 
+  left_join(origin_pop, by = "origin_cbsa") |> 
+  left_join(dest_pop, by = "dest_cbsa")
+
+
+```
+
+```{r}
+new_routes_rdu$forecast_demand = predict(single_variable_model, new_routes_rdu)
+
+new_routes_rdu
+
+
+```
+
+
